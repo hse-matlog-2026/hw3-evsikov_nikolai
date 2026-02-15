@@ -10,7 +10,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Mapping, Optional, Set, Tuple, Union
 
-from logic_utils import frozen, memoized_parameterless_method
+from logic_utils import frozen, memoized_parameterless_method, fresh_variable_name_generator
 
 @lru_cache(maxsize=100) # Cache the return value of is_variable
 def is_variable(string: str) -> bool:
@@ -59,9 +59,9 @@ def is_binary(string: str) -> bool:
     Returns:
         ``True`` if the given string is a binary operator, ``False`` otherwise.
     """
-    return string == '&' or string == '|' or string == '->'
+    #return string == '&' or string == '|' or string == '->'
     # For Chapter 3:
-    # return string in {'&', '|',  '->', '+', '<->', '-&', '-|'}
+    return string in {'&', '|',  '->', '+', '<->', '-&', '-|'}
 
 @frozen
 class Formula:
@@ -181,7 +181,7 @@ class Formula:
     def _parse_prefix(string: str) -> Tuple[Union[Formula, None], str]:
         """Parses a prefix of the given string into a formula.
 
-        Parameters:
+        Parameters:~
             string: string to parse.
 
         Returns:
@@ -361,6 +361,26 @@ class Formula:
             assert is_variable(variable)
         # Task 3.3
 
+        if is_variable(self.root):
+            if self.root in substitution_map:
+                return substitution_map[self.root]
+            else:
+                return self
+            
+        if is_constant(self.root):
+            return self
+        
+        if is_unary(self.root):
+            after_op = self.first.substitute_variables(substitution_map)
+            return Formula(self.root, after_op)
+        
+        if is_binary(self.root):
+            first_part = self.first.substitute_variables(substitution_map)
+            second_part = self.second.substitute_variables(substitution_map)
+            return Formula(self.root, first_part, second_part)
+        
+        return self
+
     def substitute_operators(self, substitution_map: Mapping[str, Formula]) -> \
             Formula:
         """Substitutes in the current formula, each constant or operator `op`
@@ -390,3 +410,43 @@ class Formula:
                    is_binary(operator)
             assert substitution_map[operator].variables().issubset({'p', 'q'})
         # Task 3.4
+
+        '''Была проблема, что в тестах специально в формулах лежат p и q, то есть повторяются
+        переменные и происходят замены, которые не должны, поэтому использовал инструмент из 
+        logic_utils, чтобы он создавал новые переменные, которых точно не будет в формлуах'''
+        if is_variable(self.root):
+            return self
+        
+        if is_constant(self.root):
+            if self.root in substitution_map:
+                return substitution_map[self.root]
+            else:
+                return self
+        
+        if is_unary(self.root):
+            after_op = self.first.substitute_operators(substitution_map)
+            if self.root in substitution_map:
+                result = substitution_map[self.root]
+                fresh_p = next(fresh_variable_name_generator)
+                result = result.substitute_variables({'p': Formula(fresh_p)})
+                result = result.substitute_variables({fresh_p: after_op})
+                return result
+            else:
+                return Formula(self.root, after_op)
+            
+        if is_binary(self.root):
+            first_part = self.first.substitute_operators(substitution_map)
+            second_part = self.second.substitute_operators(substitution_map)
+            if self.root in substitution_map:
+                result = substitution_map[self.root]
+                fresh_p = next(fresh_variable_name_generator)
+                fresh_q = next(fresh_variable_name_generator)
+                result = result.substitute_variables({'p': Formula(fresh_p)})
+                result = result.substitute_variables({'q': Formula(fresh_q)})
+                result = result.substitute_variables({fresh_p: first_part})
+                result = result.substitute_variables({fresh_q: second_part})
+                return result
+            else:
+                return Formula(self.root, first_part, second_part)
+            
+        return self
